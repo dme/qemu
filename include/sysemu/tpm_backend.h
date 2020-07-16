@@ -83,6 +83,8 @@ struct TPMBackendClass {
 
     TpmTypeOptions *(*get_tpm_options)(TPMBackend *t);
 
+    TpmPcrList *(*get_pcr_values)(TPMBackend *s);
+
     void (*handle_request)(TPMBackend *s, TPMBackendCmd *cmd, Error **errp);
 };
 

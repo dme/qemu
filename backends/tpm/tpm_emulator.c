@@ -35,6 +35,7 @@
 #include "sysemu/tpm_util.h"
 #include "tpm_int.h"
 #include "tpm_ioctl.h"
+#include "tpm_blobs.h"
 #include "migration/blocker.h"
 #include "migration/vmstate.h"
 #include "qapi/error.h"
@@ -844,6 +845,241 @@ static int tpm_emulator_set_state_blobs(TPMBackend *tb)
     return 0;
 }
 
+static char hexdigit(uint8_t d)
+{
+    if (d < 10) {
+        return '0' + d;
+    }
+    return 'a' + d - 10;
+}
+
+static char *str_digest(const uint8_t *digest, size_t len)
+{
+    char *s = g_malloc0(len * 2 + 1);
+    const uint8_t *d;
+    char *p;
+
+    for (d = digest, p = s; len > 0; len--, d++, p += 2) {
+        *p = hexdigit((*d >> 4) & 0xf);
+        *(p + 1) = hexdigit(*d & 0xf);
+    }
+
+    return s;
+}
+
+static bool pop_uint16t(TPMSizedBuffer *tsb, uint16_t *val)
+{
+    uint8_t *valp = (uint8_t *)val;
+
+    if (tsb->size < sizeof(*val)) {
+        return false;
+    }
+
+    valp[0] = tsb->buffer[1];
+    valp[1] = tsb->buffer[0];
+
+    tsb->buffer += sizeof(*val);
+    tsb->size -= sizeof(*val);
+
+    return true;
+}
+
+static bool pop_uint32t(TPMSizedBuffer *tsb, uint32_t *val)
+{
+    uint8_t *valp = (uint8_t *)val;
+
+    if (tsb->size < sizeof(*val)) {
+        return false;
+    }
+
+    valp[0] = tsb->buffer[3];
+    valp[1] = tsb->buffer[2];
+    valp[2] = tsb->buffer[1];
+    valp[3] = tsb->buffer[0];
+
+    tsb->buffer += sizeof(*val);
+    tsb->size -= sizeof(*val);
+
+    return true;
+}
+
+static bool pop_bytes(TPMSizedBuffer *tsb, uint8_t *buffer, uint32_t length)
+{
+    if (tsb->size < length) {
+        return false;
+    }
+
+    memcpy(buffer, tsb->buffer, length);
+
+    tsb->buffer += length;
+    tsb->size -= length;
+
+    return true;
+}
+
+static bool pop_string(TPMSizedBuffer *tsb, char **buffer)
+{
+    uint16_t length;
+    uint8_t *buf;
+
+    if (!pop_uint16t(tsb, &length)) {
+        return false;
+    }
+
+    /* The length includes a trailing NULL. */
+
+    buf = g_try_malloc(length);
+    if (!buf) {
+        return false;
+    }
+
+    if (!pop_bytes(tsb, buf, length)) {
+        g_free(buf);
+        return false;
+    }
+
+    *buffer = (char *)buf;
+
+    return true;
+}
+
+static TpmPcrList *tpm_emulator_get_pcr_values(TPMBackend *tb)
+{
+    TPMEmulator *tpm_emu = TPM_EMULATOR(tb);
+    TPMSizedBuffer tsb = { .buffer = NULL, .size = 0 }, tsb_copy;
+    uint32_t flags = 0;
+    int r;
+    uint32_t version, p, pcr_count;
+    TpmPcrList *pcr_head, *pcr_prev, *pcr_cur;
+
+    r = tpm_emulator_get_state_blob(tpm_emu,
+                                    PTM_BLOB_TYPE_PCR_VALUES,
+                                    &tsb, &flags);
+    if (r < 0) {
+        return NULL;
+    }
+
+    /* Easier to free later. */
+    tsb_copy = tsb;
+
+    /*
+     * This is the reverse of PCRValues_Marshal() in
+     * libtpms/src/tpm2/PCR.c.
+     */
+
+    pcr_head = pcr_prev = NULL;
+
+    if (!pop_uint32t(&tsb, &version)) {
+        goto error;
+    }
+    if (version != TPMLIB_BLOB_PCR_VALUES_VERSION_1) {
+        goto error;
+    }
+
+    if (!pop_uint32t(&tsb, &pcr_count)) {
+        goto error;
+    }
+
+    for (p = 0; p < pcr_count; p++) {
+        uint32_t pcr, alg_count, a;
+        TpmPcr *pcr_elem;
+        TpmPcrDigestList *dig_head, *dig_prev, *dig_cur;
+
+        pcr_cur = g_new0(TpmPcrList, 1);
+        pcr_elem = g_new0(TpmPcr, 1);
+        pcr_cur->value = pcr_elem;
+
+        if (!pop_uint32t(&tsb, &pcr)) {
+            goto error;
+        }
+        if (!pop_uint32t(&tsb, &alg_count)) {
+            goto error;
+        }
+
+        dig_head = dig_prev = NULL;
+
+        for (a = 0; a < alg_count; a++) {
+            char *alg;
+            uint32_t pcr_data_len;
+            uint8_t *pcr_data;
+            TpmPcrDigest *dig_elem;
+
+            dig_cur = g_new0(TpmPcrDigestList, 1);
+            dig_elem = g_new0(TpmPcrDigest, 1);
+            dig_cur->value = dig_elem;
+
+            if (!pop_string(&tsb, &alg)) {
+                goto error;
+            }
+            if (!pop_uint32t(&tsb, &pcr_data_len)) {
+                goto error;
+            }
+
+            pcr_data = g_try_malloc(pcr_data_len);
+            if (!pcr_data) {
+                goto error;
+            }
+
+            if (!pop_bytes(&tsb, pcr_data, pcr_data_len)) {
+                g_free(pcr_data);
+                goto error;
+            }
+
+            dig_elem->algorithm = alg;
+            dig_elem->digest = str_digest(pcr_data, pcr_data_len);
+
+            g_free(pcr_data);
+
+            if (dig_prev) {
+                dig_prev->next = dig_cur;
+            }
+            if (!dig_head) {
+                dig_head = dig_cur;
+            }
+            dig_prev = dig_cur;
+        }
+
+        pcr_elem->pcr = pcr;
+        pcr_elem->digests = dig_head;
+
+        if (pcr_prev) {
+            pcr_prev->next = pcr_cur;
+        }
+        if (!pcr_head) {
+            pcr_head = pcr_cur;
+        }
+        pcr_prev = pcr_cur;
+    }
+
+    tpm_sized_buffer_reset(&tsb_copy);
+
+    return pcr_head;
+
+ error:
+    while (pcr_head != NULL) {
+        TpmPcrList *pcr_next = pcr_head->next;
+        TpmPcrDigestList *dig_head = pcr_head->value->digests;
+
+        while (dig_head != NULL) {
+            TpmPcrDigestList *dig_next = dig_head->next;
+
+            g_free(dig_head->value->algorithm);
+            g_free(dig_head->value->digest);
+            g_free(dig_head->value);
+            g_free(dig_head);
+            dig_head = dig_next;
+        }
+
+        g_free(pcr_head->value);
+        g_free(pcr_head);
+        pcr_head = pcr_next;
+    }
+
+    tpm_sized_buffer_reset(&tsb_copy);
+
+    return NULL;
+}
+
 static int tpm_emulator_pre_save(void *opaque)
 {
     TPMBackend *tb = opaque;
@@ -984,6 +1220,7 @@ static void tpm_emulator_class_init(ObjectClass *klass, void *data)
     tbc->get_tpm_version = tpm_emulator_get_tpm_version;
     tbc->get_buffer_size = tpm_emulator_get_buffer_size;
     tbc->get_tpm_options = tpm_emulator_get_tpm_options;
+    tbc->get_pcr_values = tpm_emulator_get_pcr_values;
 
     tbc->handle_request = tpm_emulator_handle_request;
 }

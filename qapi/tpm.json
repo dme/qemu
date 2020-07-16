@@ -153,3 +153,40 @@
 #
 ##
 { 'command': 'query-tpm', 'returns': ['TPMInfo'] }
+
+
+##
+# @TpmPcrDigest:
+#
+# @algorithm: The algorithm
+#
+# @digest: The value of the PCR
+#
+##
+{ 'struct': 'TpmPcrDigest',
+  'data': { 'algorithm': 'str',
+            'digest': 'str' } }
+
+##
+# @TpmPcr:
+#
+# A single PCR
+#
+# @pcr: The PCR
+#
+# @digests: The digests
+#
+##
+{ 'struct': 'TpmPcr',
+  'data': { 'pcr': 'int',
+            'digests': ['TpmPcrDigest'] } }
+##
+# @query-tpm-pcr:
+#
+# Return information about PCRs
+#
+# Returns: @TpmPcrValue on success
+#
+##
+{ 'command': 'query-tpm-pcr',
+  'returns': ['TpmPcr'] }

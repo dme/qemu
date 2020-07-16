@@ -240,6 +240,7 @@ TpmTypeList *qmp_query_tpm_types(Error **errp)
 
     return head;
 }
+
 TpmModelList *qmp_query_tpm_models(Error **errp)
 {
     TpmModelList *head = NULL, *prev = NULL, *cur_item;
@@ -262,4 +263,12 @@ TpmModelList *qmp_query_tpm_models(Error **errp)
     g_slist_free(l);
 
     return head;
+}
+
+TpmPcrList *qmp_query_tpm_pcr(Error **errp)
+{
+    TPMBackend *s = QLIST_FIRST(&tpm_backends);
+    TPMBackendClass *k = TPM_BACKEND_GET_CLASS(s);
+
+    return k->get_pcr_values(s);
 }
