@@ -272,3 +272,11 @@ TpmPcrList *qmp_query_tpm_pcr(Error **errp)
 
     return k->get_pcr_values(s);
 }
+
+TpmPcrLogEventList *qmp_query_tpm_pcr_log(Error **errp)
+{
+    TPMBackend *s = QLIST_FIRST(&tpm_backends);
+    TPMBackendClass *k = TPM_BACKEND_GET_CLASS(s);
+
+    return k->get_pcr_log(s);
+}

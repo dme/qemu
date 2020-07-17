@@ -190,3 +190,31 @@
 ##
 { 'command': 'query-tpm-pcr',
   'returns': ['TpmPcr'] }
+
+##
+# @TpmPcrLogEvent:
+#
+# An entry in the PCR event log
+#
+# @pcr: The number of the PCR
+#
+# @digest: A TPM digest
+#
+# @sequence-number: The sequence number of this event
+#
+##
+{ 'struct': 'TpmPcrLogEvent',
+  'data': { 'pcr': 'int',
+            'digest': 'TpmPcrDigest',
+            'sequence-number': 'int' } }
+
+##
+# @query-tpm-pcr-log:
+#
+# Return the PCR event log
+#
+# Returns: @TpmPcrLogEvent on success
+#
+##
+{ 'command': 'query-tpm-pcr-log',
+  'returns': ['TpmPcrLogEvent'] }

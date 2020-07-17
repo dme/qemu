@@ -1080,6 +1080,125 @@ static TpmPcrList *tpm_emulator_get_pcr_values(TPMBackend *tb)
     return NULL;
 }
 
+static TpmPcrLogEventList *tpm_emulator_get_pcr_log(TPMBackend *tb)
+{
+    TPMEmulator *tpm_emu = TPM_EMULATOR(tb);
+    TPMSizedBuffer tsb = { .buffer = NULL, .size = 0 }, tsb_copy;
+    uint32_t flags = 0;
+    int r;
+    uint32_t version, entry_count;
+    TpmPcrLogEventList *ple_head, *ple_prev, *ple_cur;
+
+    r = tpm_emulator_get_state_blob(tpm_emu,
+                                    PTM_BLOB_TYPE_PCR_EVENT_LOG,
+                                    &tsb, &flags);
+    if (r < 0) {
+        return NULL;
+    }
+
+    /* Easier to free later. */
+    tsb_copy = tsb;
+
+    /*
+     * This is the reverse of PCREventLog_Marshal() in
+     * libtpms/src/tpm2/PCR.c.
+     */
+
+    ple_head = ple_prev = NULL;
+
+    if (!pop_uint32t(&tsb, &version)) {
+        goto error;
+    }
+    if (version != TPMLIB_BLOB_PCR_EVENT_LOG_VERSION_1) {
+        goto error;
+    }
+
+    if (!pop_uint32t(&tsb, &entry_count)) {
+        goto error;
+    }
+
+    while (entry_count > 0) {
+        uint32_t pcr;
+        uint16_t alg_n;
+        char *alg;
+        uint32_t pcr_data_len;
+        uint8_t *pcr_data;
+        uint32_t seq_no;
+        TpmPcrLogEvent *ple_elem;
+        TpmPcrDigest *dig_elem;
+
+        ple_cur = g_new0(TpmPcrLogEventList, 1);
+        ple_elem = g_new0(TpmPcrLogEvent, 1);
+        dig_elem = g_new0(TpmPcrDigest, 1);
+        ple_cur->value = ple_elem;
+
+        if (!pop_uint32t(&tsb, &pcr)) {
+            goto error;
+        }
+        if (!pop_uint16t(&tsb, &alg_n)) {
+            goto error;
+        }
+        if (!pop_string(&tsb, &alg)) {
+            goto error;
+        }
+        if (!pop_uint32t(&tsb, &pcr_data_len)) {
+            goto error;
+        }
+
+        pcr_data = g_try_malloc(pcr_data_len);
+        if (!pcr_data) {
+            goto error;
+        }
+
+        if (!pop_bytes(&tsb, pcr_data, pcr_data_len)) {
+            g_free(pcr_data);
+            goto error;
+        }
+
+        if (!pop_uint32t(&tsb, &seq_no)) {
+            goto error;
+        }
+
+        dig_elem->algorithm = alg;
+        dig_elem->digest = str_digest(pcr_data, pcr_data_len);
+
+        ple_elem->pcr = pcr;
+        ple_elem->digest = dig_elem;
+        ple_elem->sequence_number = seq_no;
+
+        g_free(pcr_data);
+
+        if (ple_prev) {
+            ple_prev->next = ple_cur;
+        }
+        if (!ple_head) {
+            ple_head = ple_cur;
+        }
+        ple_prev = ple_cur;
+
+        entry_count--;
+    }
+
+    return ple_head;
+
+ error:
+    while (ple_head != NULL) {
+        TpmPcrLogEventList *ple_next = ple_head->next;
+
+        g_free(ple_head->value->digest->algorithm);
+        g_free(ple_head->value->digest->digest);
+        g_free(ple_head->value->digest);
+        g_free(ple_head->value);
+        g_free(ple_head);
+
+        ple_head = ple_next;
+    }
+
+    tpm_sized_buffer_reset(&tsb_copy);
+
+    return NULL;
+}
+
 static int tpm_emulator_pre_save(void *opaque)
 {
     TPMBackend *tb = opaque;
@@ -1221,6 +1340,7 @@ static void tpm_emulator_class_init(ObjectClass *klass, void *data)
     tbc->get_buffer_size = tpm_emulator_get_buffer_size;
     tbc->get_tpm_options = tpm_emulator_get_tpm_options;
     tbc->get_pcr_values = tpm_emulator_get_pcr_values;
+    tbc->get_pcr_log = tpm_emulator_get_pcr_log;
 
     tbc->handle_request = tpm_emulator_handle_request;
 }

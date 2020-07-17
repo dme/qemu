@@ -85,6 +85,8 @@ struct TPMBackendClass {
 
     TpmPcrList *(*get_pcr_values)(TPMBackend *s);
 
+    TpmPcrLogEventList *(*get_pcr_log)(TPMBackend *s);
+
     void (*handle_request)(TPMBackend *s, TPMBackendCmd *cmd, Error **errp);
 };
 

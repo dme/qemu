@@ -335,6 +335,12 @@ static TpmPcrList *tpm_passthrough_get_pcr_values(TPMBackend *tb)
     return NULL;
 }
 
+static TpmPcrLogEventList *tpm_passthrough_get_pcr_log(TPMBackend *tb)
+{
+    /* Not possible with passthrough. */
+    return NULL;
+}
+
 static const QemuOptDesc tpm_passthrough_cmdline_opts[] = {
     TPM_STANDARD_CMDLINE_OPTS,
     {
@@ -392,6 +398,7 @@ static void tpm_passthrough_class_init(ObjectClass *klass, void *data)
     tbc->get_buffer_size = tpm_passthrough_get_buffer_size;
     tbc->get_tpm_options = tpm_passthrough_get_tpm_options;
     tbc->get_pcr_values = tpm_passthrough_get_pcr_values;
+    tbc->get_pcr_log = tpm_passthrough_get_pcr_log;
     tbc->handle_request = tpm_passthrough_handle_request;
 }
 

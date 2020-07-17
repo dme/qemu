@@ -20,6 +20,7 @@ extern "C" {
 
 #define TPMLIB_BLOB_MAGIC                   ((uint32_t)0xb10b)
 #define TPMLIB_BLOB_PCR_VALUES_VERSION_1    ((TPMLIB_BLOB_MAGIC << 16) | 0x1)
+#define TPMLIB_BLOB_PCR_EVENT_LOG_VERSION_1 ((TPMLIB_BLOB_MAGIC << 16) | 0x1)
 
 /*
  * PCR Values blob version 1 is encoded as follows:
@@ -38,6 +39,25 @@ extern "C" {
  * ] x count of PCR values
  *
  * There no packing between elements.
+ */
+
+/*
+ * PCR Event Log blob version 1 is encoded as follows:
+ *
+ * UINT32 version
+ * UINT32 count of PCR event log entries
+ * [ UINT32 PCR number
+ *   UINT16 hash algorithm identifier
+ *   UINT16 length of algorithm name (including NULL)
+ *   [ BYTE algorithm name bytes
+ *   ] x length of algorithm name
+ *   UINT32 count of digest bytes
+ *   [ BYTE digest byte
+ *   ] x count of digest bytes
+ *   UINT32 log entry sequence number
+ * ] x count of PCR event log entries
+ *
+ * There is no packing between elements.
  */
 
 #ifdef __cplusplus

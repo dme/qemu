@@ -118,10 +118,11 @@ struct ptm_getstate {
 };
 
 /* TPM state blob types */
-#define PTM_BLOB_TYPE_PERMANENT  1
-#define PTM_BLOB_TYPE_VOLATILE   2
-#define PTM_BLOB_TYPE_SAVESTATE  3
-#define PTM_BLOB_TYPE_PCR_VALUES 4
+#define PTM_BLOB_TYPE_PERMANENT     1
+#define PTM_BLOB_TYPE_VOLATILE      2
+#define PTM_BLOB_TYPE_SAVESTATE     3
+#define PTM_BLOB_TYPE_PCR_VALUES    4
+#define PTM_BLOB_TYPE_PCR_EVENT_LOG 5
 
 /* state_flags above : */
 #define PTM_STATE_FLAG_DECRYPTED     1 /* on input:  get decrypted state */
