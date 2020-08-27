@@ -62,6 +62,9 @@ typedef struct TPMBlobBuffers {
 
     uint32_t savestate_flags;
     TPMSizedBuffer savestate;
+
+    uint32_t pcreventlog_flags;
+    TPMSizedBuffer pcreventlog;
 } TPMBlobBuffers;
 
 typedef struct TPMEmulator {
@@ -730,7 +733,10 @@ static int tpm_emulator_get_state_blobs(TPMEmulator *tpm_emu)
                                     &state_blobs->volatil_flags) < 0 ||
         tpm_emulator_get_state_blob(tpm_emu, PTM_BLOB_TYPE_SAVESTATE,
                                     &state_blobs->savestate,
-                                    &state_blobs->savestate_flags) < 0) {
+                                    &state_blobs->savestate_flags) < 0 ||
+        tpm_emulator_get_state_blob(tpm_emu, PTM_BLOB_TYPE_PCR_EVENT_LOG,
+                                    &state_blobs->pcreventlog,
+                                    &state_blobs->pcreventlog_flags) < 0) {
         goto err_exit;
     }
 
@@ -740,6 +746,7 @@ static int tpm_emulator_get_state_blobs(TPMEmulator *tpm_emu)
     tpm_sized_buffer_reset(&state_blobs->volatil);
     tpm_sized_buffer_reset(&state_blobs->permanent);
     tpm_sized_buffer_reset(&state_blobs->savestate);
+    tpm_sized_buffer_reset(&state_blobs->pcreventlog);
 
     return -1;
 }
@@ -836,7 +843,10 @@ static int tpm_emulator_set_state_blobs(TPMBackend *tb)
                                     state_blobs->volatil_flags) < 0 ||
         tpm_emulator_set_state_blob(tpm_emu, PTM_BLOB_TYPE_SAVESTATE,
                                     &state_blobs->savestate,
-                                    state_blobs->savestate_flags) < 0) {
+                                    state_blobs->savestate_flags) < 0 ||
+        tpm_emulator_set_state_blob(tpm_emu, PTM_BLOB_TYPE_PCR_EVENT_LOG,
+                                    &state_blobs->pcreventlog,
+                                    state_blobs->pcreventlog_flags) < 0) {
         return -EIO;
     }
 
@@ -1257,6 +1267,12 @@ static const VMStateDescription vmstate_tpm_emulator = {
         VMSTATE_VBUFFER_ALLOC_UINT32(state_blobs.savestate.buffer,
                                      TPMEmulator, 0, 0,
                                      state_blobs.savestate.size),
+
+        VMSTATE_UINT32(state_blobs.pcreventlog_flags, TPMEmulator),
+        VMSTATE_UINT32(state_blobs.pcreventlog.size, TPMEmulator),
+        VMSTATE_VBUFFER_ALLOC_UINT32(state_blobs.pcreventlog.buffer,
+                                     TPMEmulator, 0, 0,
+                                     state_blobs.pcreventlog.size),
 
         VMSTATE_END_OF_LIST()
     }
